@@ -7,18 +7,15 @@ import (
 	"time"
 )
 
-// Constantes
+
 const (
 	Follower = iota
 	Candidate
 	Leader
 )
 
-// Structs
-type logEntry struct {
-	Command interface{}
-	Term    int
-}
+
+
 
 type ApplyMsg struct {
 	Index       int
@@ -35,7 +32,7 @@ type Raft struct {
 	applyCh   chan ApplyMsg
 	currentTerm int
 	votedFor    int
-	logEntries  []logEntry
+	logEntries  []Logs
 	nextIndex    []int
 	matchIndex   []int
 	state        int
@@ -64,6 +61,10 @@ type AppendEntriesReply struct {
 	Success bool
 }
 
+type Logs struct {
+	Command interface{}
+	Term    int
+}
 
 
 func (rf *Raft) GetState() (int, bool) {
@@ -106,7 +107,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return rf.peers[server].Call("Raft.RequestVote", args, reply)
 }
 
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+func (rf *Raft) HandleLog(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -123,8 +124,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Success = true
 }
 
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	return rf.peers[server].Call("Raft.AppendEntries", args, reply)
+func (rf *Raft) sendLogRequest(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	return rf.peers[server].Call("Raft.HandleLog", args, reply)
 }
 
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
@@ -134,7 +135,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, rf.currentTerm, false
 	}
 
-	rf.logEntries = append(rf.logEntries, logEntry{Command: command, Term: rf.currentTerm})
+	rf.logEntries = append(rf.logEntries, Logs{Command: command, Term: rf.currentTerm})
 	index := len(rf.logEntries) - 1
 	return index, rf.currentTerm, true
 }
@@ -147,7 +148,7 @@ func (rf *Raft) resetElectionTimeout() time.Duration {
 	return time.Duration(150+rand.Intn(150)) * time.Millisecond
 }
 
-func (rf *Raft) runAsFollower() {
+func (rf *Raft) Follower() {
 	for rf.state == Follower {
 		timeout := rf.resetElectionTimeout()
 		rf.mu.Lock()
@@ -163,7 +164,7 @@ func (rf *Raft) runAsFollower() {
 	}
 }
 
-func (rf *Raft) runAsCandidate() {
+func (rf *Raft) Candidate() {
 	rf.mu.Lock()
 	rf.currentTerm++
 	rf.votedFor = rf.me
@@ -220,7 +221,7 @@ func (rf *Raft) runAsCandidate() {
 	}
 }
 
-func (rf *Raft) runAsLeader() {
+func (rf *Raft) Leader() {
 	for rf.state == Leader {
 		rf.mu.Lock()
 		term := rf.currentTerm
@@ -233,7 +234,7 @@ func (rf *Raft) runAsLeader() {
 				go func(peerID int) {
 					args := AppendEntriesArgs{Term: term, LeaderId: myID}
 					reply := AppendEntriesReply{}
-					if rf.sendAppendEntries(peerID, &args, &reply) {
+					if rf.sendLogRequest(peerID, &args, &reply) {
 						rf.mu.Lock()
 						if reply.Term > term {
 							rf.currentTerm = reply.Term
@@ -255,7 +256,7 @@ func Make(peers []*labrpc.ClientEnd, id int, persister *Persister, applyCh chan 
 		persister:    persister,
 		me:           id,
 		applyCh:      applyCh,
-		logEntries:   []logEntry{{Term: 0}},
+		logEntries:   []Logs{{Term: 0}},
 		votedFor:     -1,
 		state:        Follower,
 		lastActivity: time.Now(),
@@ -267,11 +268,11 @@ func Make(peers []*labrpc.ClientEnd, id int, persister *Persister, applyCh chan 
 		for {
 			switch rf.state {
 			case Follower:
-				rf.runAsFollower()
+				rf.Follower()
 			case Candidate:
-				rf.runAsCandidate()
+				rf.Candidate()
 			case Leader:
-				rf.runAsLeader()
+				rf.Leader()
 			}
 		}
 	}()
