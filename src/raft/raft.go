@@ -129,15 +129,14 @@ func (rf *Raft) sendLogRequest(server int, args *AppendEntriesArgs, reply *Appen
 }
 
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	if rf.state != Leader {
-		return -1, rf.currentTerm, false
-	}
+	index := -1
+	term := -1
+	isLeader := true
 
-	rf.logEntries = append(rf.logEntries, Logs{Command: command, Term: rf.currentTerm})
-	index := len(rf.logEntries) - 1
-	return index, rf.currentTerm, true
+	
+
+
+	return index, term, isLeader
 }
 
 func (rf *Raft) Kill() {
@@ -145,7 +144,7 @@ func (rf *Raft) Kill() {
 }
 
 func (rf *Raft) resetElectionTimeout() time.Duration {
-	return time.Duration(150+rand.Intn(150)) * time.Millisecond
+	return time.Duration(300+rand.Intn(300)) * time.Millisecond
 }
 
 func (rf *Raft) Follower() {
